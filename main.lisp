@@ -29,6 +29,7 @@
 
 (defgeneric display (frame pane))
 
+;; TODO change positions to floats, make display relative.
 (defstruct (planet
             (:print-object (lambda (object stream)
                              (format stream "#PLANET{~A}"
@@ -191,6 +192,21 @@ valid tasks are:
     (setf (planet-credits p) (+ (planet-credits p)
                                 (* 10 (planet-level p)))))
 
+  (dolist (s *ships*)
+    (let* ((orders (ship-orders s))
+           (leave (orders-leave-turn orders))
+           (report (orders-report-turn orders)))
+      (cond ((< *current-turn* leave)
+             ;; don't move, it isn't time yet
+             )
+            ((> *current-turn* report)
+             ;; go full speed, ship is late
+             )
+            (t
+             ;; go no more than the ships full speed
+             )))
+    (cond (())))
+
   (incf *current-turn*))
 (defun upgrade-planet (planet)
   "returns an upgraded copy of planet")
@@ -217,6 +233,7 @@ valid tasks are:
 
 ;; TODO draw deployed ships on route
 ;; TODO draw garrissoned ships as little circles around the planet
+;; TODO when you change planets to floats, add the ability to pan and zoom
 (defmethod display ((frame app-frame) pane)
   ;; draw planets
   (loop for p in *planets* do
