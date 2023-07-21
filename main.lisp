@@ -215,6 +215,8 @@ valid tasks are:
        :credits (- credits (ship-cost ship))
        :garrison (append garrison (list ship))))))
 
+;; TODO draw deployed ships on route
+;; TODO draw garrissoned ships as little circles around the planet
 (defmethod display ((frame app-frame) pane)
   ;; draw planets
   (loop for p in *planets* do
@@ -227,10 +229,7 @@ valid tasks are:
                                              :align-y :center))))
 
   ;; draw ships
-  (loop for s in *ships* do
-    (with-accessors ((x ship-x)
-                     (y ship-y)) s
-      (draw-circle* pane x y 2 :ink (get-color s))))
+  (loop for s in *ships* do (format t "don't know how to draw this ship..."))
 
   ;; draw connectors
   (loop for c in *connections*
@@ -270,7 +269,6 @@ valid tasks are:
 
 (define-presentation-type planet ())
 (define-presentation-type ship ())
-(define-presentation-type garrisoned-ship ())
 (define-presentation-type orders ())
 (define-presentation-to-command-translator describe-planet
     (planet planet-stats app-frame)
@@ -280,42 +278,36 @@ valid tasks are:
     (ship assign-orders app-frame)
     (obj) (list obj))
 
-(define-presentation-to-command-translator deploy-this-garrisoned-ship
-    (garrisoned-ship deploy-ship app-frame)
-    (obj) (list obj))
+(defun garrisoned-ship-planet (ship)
+  "returns the planet that the ship is garrisoned on. If the ship is not garrisoned
+on any planet, the function returns nil"
+  (find-if (lambda (p) (find ship (planet-garrison p)))
+           *planets*))
 
-;; this command is for garrissoned ships
-(define-app-frame-command (deploy-ship :name "deploy-ship")
-    ((ship 'garrisoned-ship)
+(define-app-frame-command (assign-orders :name "assign-orders")
+    ((ship 'ship)
      (report-planet 'planet)
      (turn 'integer)
      (task 'string))
+
+  (let ((home-planet (garrisoned-ship-planet ship)))
+    (when home-planet
+      (setf (planet-garrison home-planet)
+            (remove ship (planet-garrison home-planet)))
+      (push ship *ships*)))
+
   (setf (ship-orders ship)
-        (list (make-orders
-               :leave-planet (find-if (lambda (p) (find ship (planet-garrison p)))
-                                      *planets*)
-               :leave-turn *current-turn*
-               :report-planet report-planet
-               :report-turn turn
-               :task task))))
-
-;; this command is only for ships that are currently deployed
-(define-app-frame-command (assign-orders :name "assign-orders")
-    ((ship 'ship) (planet 'planet) (turn '(integer *current-turn*)))
-  ;; if ship orders are nil, then the ship is currently garrisoned.
-
-  ;; update the orders on the ship
-  (setf (ship-orders ship)
-        (make-orders :leave-planet ))
-
-  ;; if the ship already had orders, then the ship was garrisoned, remove it
-  ;; from the planet garrison, and push it into the ship tracker.
-  (unless (ship-orders ship)
-    (let ((planet (find-if (lambda (p)
-                             (find ship (planet-garrison p)) :test #'equal)
-                           *planets*)))
-      (setf (planet-garrison planet) (remove ship (planet-garrison planet)))
-      (push ship *ships*))))
+        (append (ship-orders ship)
+                (list (make-orders
+                       ;; BUG: if a ship is on route to planet, adding orders
+                       ;; will still work.
+                       :leave-planet (or (garrisoned-ship-planet ship)
+                                         (orders-report-planet
+                                          (first (ship-orders ship))))
+                       :leave-turn *current-turn*
+                       :report-planet report-planet
+                       :report-turn turn
+                       :task task)))))
 
 (define-app-frame-command (add-connection :name "add-connection" :menu t)
     ((p1 'planet) (p2 'planet))
@@ -347,10 +339,13 @@ valid tasks are:
               (planet-level p)
               (planet-credits p))
       (dolist (ship (planet-garrison p))
-        (with-output-as-presentation (pane ship 'garrisoned-ship)
+        (with-output-as-presentation (pane ship 'ship)
           ;; todo, maybe format this as a table
           (format pane "~&  ~A" ship))))))
 
+;; BUG because you are creating new planet objects, whenever you still have a
+;; reference to the old one (ie, when you click on the command in the command
+;; window), then you will add a whole new entry to the planet list.
 (define-app-frame-command (produce-ship :name "produce-ship" :menu t)
     ((p 'planet) (power 'integer) (health 'integer) (speed 'integer))
   (let ((new-planet (planet-produce-ship p (make-garrisoned-ship power
@@ -375,3 +370,10 @@ valid tasks are:
      (let ((frame (make-application-frame 'app-frame)))
        (setf *application-frame* frame)
        (run-frame-top-level frame)))))
+
+(defun get-planet (name)
+  (find-if (lambda (p) (equalp name (planet-name p))) *planets*))
+
+(defun print-garrisons ()
+  (dolist (p *planets*)
+    (format t "~&~A: ~S" (planet-name p) (planet-garrison p))))
