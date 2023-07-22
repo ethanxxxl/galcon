@@ -34,13 +34,32 @@
             (:print-object (lambda (object stream)
                              (format stream "#PLANET{~A}"
                                      (planet-name object)))))
+  "Contains data pertaining to planets in the game
+
+* Planet Attributes
+
+  - `x' :: the x position in space. It is expressed as a float value. The
+    display function will use this value to place the panet on the screen
+
+  - `y' :: the y position in space. It is expressed as a float value. The
+    display function will use this value to place the panet on the screen
+
+  - `name' :: every planet has a name. This is the name that is displayed
+
+  - `level' ::
+
+  - `credits' ::
+
+  - `garrison' ::
+
+  - `owner' ::
+"
   (x 0 :type integer)
   (y 0 :type integer)
   (name "" :type string)
   (level 1 :type integer)
   (credits 0 :type integer)
   (garrison)
-  (orbit)
   (owner "" :type string))
 
 (defstruct (ship
