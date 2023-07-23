@@ -6,196 +6,140 @@
 (defpackage :galcon
   (:use :clim :clim-lisp))
 
+(load "./orders.lisp")
+(load "./ship.lisp")
+
 (in-package :galcon)
 
 (define-application-frame app-frame nil
   ()
   (:panes
-   (app :application :height 400
+   (app :application :height 10000
                      :scroll-bars t
-                     :display-function #'display)
-   (details :application :height 20
-                         :width 1000
+                     :display-function #'graphics-display)
+   (details :application :height 10000
+                         :width 30
                          :display-time nil)
-   (next-turn :push-button :height 20
-                           :width 10
-                           :label "next-turn")
+   (status-bar :application :height 5
+               :scroll-bars nil
+               :display-time t
+               :display-function #'status-display)
    (int :interactor :height 75))
   (:layouts
    (default (vertically ()
-              app
-              (horizontally () details next-turn)
+              (horizontally () app details)
+              status-bar
               int))))
 
 (defgeneric display (frame pane))
+
+;;; Generic position accessors
+(defgeneric x (obj))
+(defgeneric y (obj))
+
+;;;
+;;; vec2 structure, methods, and functions
+;;;
+
+(defstruct (vec2
+            (:constructor make-vec2-default)
+            (:constructor make-vec2 (x y)))
+  (x 0.0 :type float)
+  (y 0.0 :type float))
+
+(defmethod x ((obj vec2))
+  (vec2-x obj))
+
+(defmethod y ((obj vec2))
+  (vec2-y obj))
+
+(defun vec2-norm (vec)
+  (make-vec2 (/ (x vec) (vec2-len vec))
+             (/ (y vec) (vec2-len vec))))
+
+(defun vec2-sub (&rest vecs)
+  (make-vec2 (reduce #'- (mapcar #'x vecs))
+             (reduce #'- (mapcar #'y vecs))))
+
+(defun vec2-add (&rest vecs)
+  (make-vec2 (reduce #'+ (mapcar #'x vecs))
+             (reduce #'+ (mapcar #'y vecs))))
+
+(defun vec2-mul (scalar vec)
+  (make-vec2 (* (x vec) scalar)
+             (* (y vec) scalar)))
+
+(defun vec2-len (vec)
+  (sqrt (+ (expt (x vec) 2)
+           (expt (y ved) 2))))
+
+;;;
+;;; planet structure, methods, and functions
+;;;
 
 ;; TODO change positions to floats, make display relative.
 (defstruct (planet
             (:print-object (lambda (object stream)
                              (format stream "#PLANET{~A}"
                                      (planet-name object)))))
-  "Contains data pertaining to planets in the game
-
-* Planet Attributes
-
-  - `x' :: the x position in space. It is expressed as a float value. The
-    display function will use this value to place the panet on the screen
-
-  - `y' :: the y position in space. It is expressed as a float value. The
-    display function will use this value to place the panet on the screen
-
-  - `name' :: every planet has a name. This is the name that is displayed
-
-  - `level' ::
-
-  - `credits' ::
-
-  - `garrison' ::
-
-  - `owner' ::
-"
-  (x 0 :type integer)
-  (y 0 :type integer)
+  (pos (make-vec2-default) :type vec2)
   (name "" :type string)
   (level 1 :type integer)
   (credits 0 :type integer)
   (garrison)
+  (orbit)
   (owner "" :type string))
 
-(defstruct (ship
-            (:print-object (lambda (object stream)
-                             (with-accessors ((name ship-name)
-                                              (power ship-power)
-                                              (health ship-health)
-                                              (speed ship-speed)
-                                              (orders ship-orders)
-                                              (progress ship-progress)
-                                              (owner ship-owner)) object
-                               (format stream "[~A] [p/h/s: ~D/~D/~D]"
-                                       name power health speed)
+(defmethod x ((obj planet))
+  (vec2-x (planet-pos obj)))
 
-                               (when orders
-                                 (format stream "[~A] [~A%]"
-                                         (if (listp orders)
-                                             (first orders)
-                                             orders)
-                                         progress))))))
-  "Describes a space ship that is used by the player.
+(defmethod y ((obj planet))
+  (vec2-y (planet-pos obj)))
 
-* Ship Attributes
 
-  There are four main attributes of concern to a player:
+;;;
+;;; list x and y accessors
+;;;
 
-  - `power' :: This is the amount of damage that the ship can do every turn. the
-    ship can focus its power on a single combatant, or its power may be
-    dispbursed across multiple combatants. The power applied to a combatant is
-    subtracted from that combatants health.
+(defmethod x ((obj list))
+  (first obj))
 
-  - `health' :: When the ship is dealt damage (ex, from the power of another
-    ship) that damage is subtracted from the ships health. The more health a
-    ship has, the longer it may remain in the game. When the health of a ship
-    reaches zero, the ship is removed from the game.
+(defmethod y ((obj list))
+  (second obj))
 
-  - `speed' :: The rate at which the ship moves across the map in pixels/turn. A
-    ship that has zero speed cannot move between planets, and is appropriate for
-    a purely defensive unit.
-
-  - `orders' :: In order for a ship to interact with other ships/planets, then
-    it must have orders. Every turn, a ship will attempt to execute its orders.
-    A ship that has no orders is completely inert. This parameter may be either
-    a single orders structure or a list of orders structures. The ship will
-    execute the orders sequentially one after another. If orders are created
-    which the ship cannot follow (ie the ship is unable to get to the planet by
-    the report turn) then the ship will attempt to minimize the error.
-
-  Additional parameters which programmers may find helpful:
-
-  - `name' :: this is the randomly assigned name of the ship.
-
-  - `progress' :: This is only meaningful while the ship has orders.
-
-  - `owner' :: a string denoting which player owns the ship in question. All
-    deployed ships are kept in the `*ships*' global variable (ie all ships with
-    orders). It is therefore necessary to distinguish which player each ship
-    belongs to.
-
-* Using a Ship
-
-  A ship is built on a planet. Upon creation, the ship is garrisoned on the
-  planet. A garrisoned ship is not visible to other players. Players may deploy
-  ships and give them orders. Once a ship is deployed, it will move towards the
-  planet listed on its orders. While in transit, a ship cannot interact with
-  other ships. Neither can a ship recieve new orders once it has begun it's its
-  trip."
-
-  (name)
-  (power 0 :type integer)
-  (health 0 :type integer)
-  (speed 0 :type integer)
-  (orders)
-  (progress)
-  (owner "" :type string))
-
-(defun make-garrisoned-ship (power health speed owner)
-  (make-ship
-   :name (format nil "~A" (gensym "SHIP-"))
-   :power power
-   :health health
-   :speed speed
-   :orders nil
-   :progress 0.0
-   :owner owner))
-
-(defstruct (orders
-            (:print-object (lambda (object stream)
-                             (with-accessors ((p1 orders-leave-planet)
-                                              (t1 orders-leave-turn)
-                                              (p2 orders-report-planet)
-                                              (t2 orders-report-turn)
-                                              (task orders-task)) object
-                               (format stream "~A -> ~A, [~D,~D] // ~A"
-                                       p1 p2 t1 t2 task)))))
-  "These are orders that instruct a ship where to be, when to be there, and what
-to do at that location.
-
-if turn is in the past, or nil, the ship will move to the position at top speed.
-otherwise, the ship will go at a speed which will place it at the location
-precisely at the turn specified.
-
-valid tasks are:
-:standby   -- ship remains completely passive, not attacking even if provoked
-:sentry    -- ship only attacks if it is attacked first
-:attack    -- ship will attack any hostile ships found within range
-:garrison  -- attempts to garrison on destination. the the planet is hostile,
-              the planet is attacked."
-  (leave-planet)
-  (leave-turn)
-
-  (report-planet)
-  (report-turn)
-  (task))
+;;;
+;;; Player structure and accessors
+;;;
 
 (defstruct player
   (name 'string)
   (color))
 
+;;;
+;;; Game Parameters
+;;;
+
 (defparameter *players* (list
                         (make-player :name "ethanxxxl" :color +dark-green+)
-                        (make-player :name "bot 1" :color +dark-blue+)
+                        (make-player :name "bot 1" :color +dark-red+)
                         (make-player :name "bot 2" :color +dark-cyan+)))
 
 (defparameter *ships* (list))
 
 (defparameter *planets*
-  (list (make-planet :x 23 :y 23 :name "MERCURY" :owner "ethanxxxl")
-        (make-planet :x 130 :y 159 :name "VENUS" :owner "ethanxxxl")
-        (make-planet :x 384 :y 289 :name "EARTH" :owner "ethanxxxl")
-        (make-planet :x 495 :y 84 :name "MARS" :owner "bot 1")
-        (make-planet :x 53 :y 341 :name "JUPITER" :owner "bot 2")))
+  (list (make-planet :pos (make-vec2 23.0 23.0) :name "MERCURY" :owner "ethanxxxl")
+        (make-planet :pos (make-vec2 130.0 159.0) :name "VENUS" :owner "ethanxxxl")
+        (make-planet :pos (make-vec2 384.0 289.0) :name "EARTH" :owner "ethanxxxl")
+        (make-planet :pos (make-vec2 495.0 84.0) :name "MARS" :owner "bot 1")
+        (make-planet :pos (make-vec2 53.0 341.0) :name "JUPITER" :owner "bot 2")))
 
 (defparameter *current-turn* 0)
 
 (defparameter *connections* (list))
+
+(defparameter *zoom* 1.0)
+(defparameter *pan* (make-vec2 0.0 0.0))
+
 
 (defgeneric get-color (object))
 (defmethod get-color ((object planet))
@@ -211,97 +155,107 @@ valid tasks are:
     (setf (planet-credits p) (+ (planet-credits p)
                                 (* 10 (planet-level p)))))
 
-  (dolist (s *ships*)
-    (let* ((orders (ship-orders s))
-           (leave (orders-leave-turn orders))
-           (report (orders-report-turn orders)))
-      (cond ((< *current-turn* leave)
-             ;; don't move, it isn't time yet
-             )
-            ((> *current-turn* report)
-             ;; go full speed, ship is late
-             )
-            (t
-             ;; go no more than the ships full speed
-             )))
-    (cond (())))
+
+  (setf *ships*
+        (mapcar
+         (lambda (s)
+           (ship-update s))
+         *ships*))
 
   (incf *current-turn*))
-(defun upgrade-planet (planet)
-  "returns an upgraded copy of planet")
 
-(defun ship-cost (ship)
-  "returns the cost of the ship"
-  (+ (* 10 (+ (ship-health ship)
-              (ship-power ship)))
-     (* 10 (ship-speed ship))))
+(defun graphics-space-translation (vec)
+  "takes a vec2, and returns the zoomed/panned version of it."
+  (vec2-add *pan*
+            (vec2-mul *zoom* vec)))
 
-(defun planet-produce-ship (planet ship)
-  "returns a copy of planet with a new ship in garison, or "
-  (when (>= (planet-credits planet) (ship-cost ship))
-    (with-accessors ((x planet-x)
-                     (y planet-y)
-                     (name planet-name)
-                     (owner planet-owner)
-                     (credits planet-credits)
-                     (garrison planet-garrison)) planet
-      (make-planet
-       :x x :y y :name name :owner owner
-       :credits (- credits (ship-cost ship))
-       :garrison (append garrison (list ship))))))
+(defun vec2-to-point (vec)
+  "makes a CLIM point out of a vector"
+  (make-point (truncate (x vec))
+              (truncate (y vec))))
 
 ;; TODO draw deployed ships on route
 ;; TODO draw garrissoned ships as little circles around the planet
 ;; TODO when you change planets to floats, add the ability to pan and zoom
-(defmethod display ((frame app-frame) pane)
+(defun graphics-display (frame pane)
+  (declare (ignore frame))
   ;; draw planets
   (loop for p in *planets* do
-    (with-output-as-presentation (pane p 'planet)
-      (with-accessors ((x planet-x)
-                       (y planet-y))
-          p
-        (draw-circle* pane x y 25 :ink (get-color p))
-        (draw-text* pane (planet-name p) x y :align-x :center
-                                             :align-y :center))))
+    (let ((pos (vec2-to-point (graphics-space-translation (planet-pos p)))))
+      (draw-circle pane pos 35 :filled nil :ink +gray+)
 
-  ;; draw ships
-  (loop for s in *ships* do (format t "don't know how to draw this ship..."))
+      (with-output-as-presentation (pane p 'planet)
+        (draw-circle pane pos 25 :ink (get-color p)))
 
-  ;; draw connectors
-  (loop for c in *connections*
-        do
-           (let* ((p1 (car c))
-                  (p2 (cdr c)))
 
-             (apply #'draw-arrow*
-                    pane
-                    (append (planet-arrow 25 p1 p2)
-                            (list
-                             :head-filled t
-                             :line-thickness 2
-                             :head-width 7))))))
+      (draw-text pane (planet-name p) pos :align-x :center
+                                          :align-y :center)))
 
-(defun planet-pos (p1 p2)
-  (with-accessors ((x1 planet-x)
-                   (y1 planet-y)) p1
-    (with-accessors ((x2 planet-x)
-                     (y2 planet-y)) p2
-      (list x1 y1 x2 y2))))
+  ;; draw ships at planet
+  (dolist (p *planets*)
+    (let ((pos (graphics-space-translation (planet-pos p))))
+      (loop for s in (ships-at-planet (planet-name p))
+            for angle upto (* 2 pi) by (/ (* 2 pi) 20) do
+              (with-output-as-presentation (pane s 'ship)
+                (draw-circle pane
+                             (vec2-to-point
+                              (vec2-add pos
+                                        (vec2-mul 35 (make-vec2 (cos angle)
+                                                                (sin angle)))))
+                             5
+                             :ink (get-color s))))))
 
-(defun normalize (x1 y1 x2 y2)
-  (let* ((dx (- x2 x1))
-         (dy (- y2 y1))
-         (l (sqrt (+ (expt dx 2) (expt dy 2)))))
-    (list (/ dx l)
-          (/ dy l))))
+  ;; draw enroute ships
+  (dolist (s *ships*)
+    (let ((pos1 (graphics-space-translation (planet-pos (orders-leave-planet (ship-active-orders s)))))
+          (pos2 (graphics-space-translation (planet-pos (orders-report-planet (ship-active-orders s))))))
+      (when (< 0.0 (ship-progress s) 1.0)
+        (draw-line pane
+                   (vec2-to-point (first (offset-line pos1 pos2 35 35)))
+                   (vec2-to-point (second (offset-line pos1 pos2 35 35)))
+                   :ink +grey+
+                   :line-dashes t)
 
-(defun planet-arrow (r p1 p2)
-  "returns a list of points which will go between the radius's of two planets"
-  (let ((norm1 (apply #'normalize (planet-pos p1 p2)))
-        (norm2 (apply #'normalize (planet-pos p2 p1))))
-    (mapcar (lambda (n p) (truncate (+ p (* r n))))
-            (append norm1 norm2)
-            (planet-pos p1 p2))))
+        (let* ((d (vec2-len (vec2-sub pos1 pos2)))
+               (vecs (offset-line pos1 pos2
+                                  (- (* (ship-progress s) (- d 70)) 15 -35)
+                                  (+ (* (- 1.0 (ship-progress s)) (- d 70)) 35)
+                                  )))
+          (draw-arrow pane
+                      (vec2-to-point (first vecs))
+                      (vec2-to-point (second vecs))
+                      :ink +black+
+                      :head-filled t
+                      :head-width 10
+                      :head-length 15
+                      :line-thickness 2))))))
+
+(defun details-display (frame pane)
+  )
+
+(defun status-display (frame pane)
+  (formatting-table (pane)
+    (formatting-row (pane)
+      (formatting-cell (pane :align-y :center)
+        (format pane "turn: ~A" *current-turn*))
+      (formatting-cell (pane)
+        (with-output-as-gadget (pane)
+          (make-pane 'push-button
+                     :activate-callback (lambda (b) (declare (ignore b))
+                                          (next-turn-update)
+                                          (redisplay-frame-panes frame :force-p t))
+                     :client pane
+                     :label "next-turn"))))))
+
+
+(defun offset-line (v1 v2 r1 r2)
+  "this draws a line between two imaginary circles at v1 and v2, with radius's
+r1 and r2 respecively. the line connects to the radius of each circle.
+
+the line is drawn from v1 to v2"
+
+  (list (vec2-add v1 (vec2-mul (- r1) (vec2-norm (vec2-sub v1 v2))))
+        (vec2-add v2 (vec2-mul (- r2) (vec2-norm (vec2-sub v2 v1))))))
 
 (define-presentation-type planet ())
 (define-presentation-type ship ())
@@ -326,12 +280,6 @@ on any planet, the function returns nil"
      (turn 'integer)
      (task 'string))
 
-  (let ((home-planet (garrisoned-ship-planet ship)))
-    (when home-planet
-      (setf (planet-garrison home-planet)
-            (remove ship (planet-garrison home-planet)))
-      (push ship *ships*)))
-
   (setf (ship-orders ship)
         (append (ship-orders ship)
                 (list (make-orders
@@ -343,7 +291,15 @@ on any planet, the function returns nil"
                        :leave-turn *current-turn*
                        :report-planet report-planet
                        :report-turn turn
-                       :task task)))))
+                       :task task))))
+
+  ;; if the ship is garrisoned, move it out of garrison since it has recieved
+  ;; orders.
+  (let ((home-planet (garrisoned-ship-planet ship)))
+    (when home-planet
+      (setf (planet-garrison home-planet)
+            (remove ship (planet-garrison home-planet)))
+      (push ship *ships*))))
 
 (define-app-frame-command (add-connection :name "add-connection" :menu t)
     ((p1 'planet) (p2 'planet))
@@ -352,14 +308,11 @@ on any planet, the function returns nil"
 
 (define-app-frame-command (foo :name "planet" :menu t)
     ((owner 'string) (n 'string) (x 'integer) (y 'integer))
-  (setf *planets* (cons (make-planet :x x :y y :name n :owner owner)
+  (setf *planets* (cons (make-planet :pos (make-vec2 x y) :name n :owner owner)
                         *planets*)))
 
 (define-app-frame-command (redisp :name "redisp" :menu t) ()
   (update-display-functions))
-
-(defmethod activate-callback ((button push-button) (client app-frame) id)
-  (next-turn-update))
 
 (define-app-frame-command (planet-stats :name "planet-stats" :menu t)
     ((p 'planet))
@@ -379,26 +332,29 @@ on any planet, the function returns nil"
           ;; todo, maybe format this as a table
           (format pane "~&  ~A" ship))))))
 
-;; BUG because you are creating new planet objects, whenever you still have a
-;; reference to the old one (ie, when you click on the command in the command
-;; window), then you will add a whole new entry to the planet list.
 (define-app-frame-command (produce-ship :name "produce-ship" :menu t)
-    ((p 'planet) (power 'integer) (health 'integer) (speed 'integer))
-  (let ((new-planet (planet-produce-ship p (make-garrisoned-ship power
-                                                                 health
-                                                                 speed
-                                                                 (planet-owner p)))))
-    (if new-planet
-        (setf *planets* (append (list new-planet)
-                                (remove p *planets*)))
-        ;; else make a notification saying that this operation cannot be completed
-        )))
+    ((p 'planet) (power 'integer) (health 'integer) (speed 'float))
+
+  (let* ((new-ship (make-garrisoned-ship power
+                                         health
+                                         speed
+                                         (planet-owner p)))
+         (remaining-funds (- (planet-credits p) (ship-cost new-ship))))
+    (when (>= remaining-funds 0)
+      (setf (planet-credits p) remaining-funds)
+      (push new-ship (planet-garrison p)))
+
+    ;; else make a notification saying that this operation cannot be completed
+    ))
 
 (defun app-pane (&optional (pane 'app) (frame *application-frame*))
   (find-pane-named frame pane))
 
 (defun update-display-functions ()
-  (setf (slot-value (app-pane 'app) 'clim-internals::display-function) #'display))
+  (setf (slot-value (app-pane 'app) 'clim-internals::display-function)
+        #'graphics-display)
+  (setf (slot-value (app-pane 'status-bar) 'clim-internals::display-function)
+        #'status-display))
 
 (defun run ()
   (bt:make-thread
@@ -413,3 +369,7 @@ on any planet, the function returns nil"
 (defun print-garrisons ()
   (dolist (p *planets*)
     (format t "~&~A: ~S" (planet-name p) (planet-garrison p))))
+
+(defun reset-ships ()
+  (dolist (s *ships*)
+    (setf (ship-progress s) 0.0)))
