@@ -149,6 +149,70 @@ new object."
               (/ (* (- 1.0 (ship-progress ship)) (orders-distance (ship-active-orders ship)))
                  (- (orders-report-turn (ship-active-orders ship)) *current-turn*))))))
 
+(defun ship-location (ship)
+  "returns the name of the planet that the ship is currently on, or nil if the
+ship is not currently at a planet"
+  (cond ((>= 1.0 (ship-progress))
+         (orders-report-planet (ship-active-orders ship)))
+        ((= 0.0 (ship-progress ship))
+         (orders-leave-planet (ship-active-orders ship)))
+        (t
+         nil)))
+
+;; TODO decide whether it is the best approach to return a whole new ship
+;;  rather than simply modifying ship.
+;;
+;; I really don't like is pattern, of creating a copy in a let binding, then
+;; having the last thing evaluated being the copy, after using set. this seems
+;; like a very backwards way of doing things.
+;;
+;; ultimately, you will use set to replace the old ship in *ships* with the ship
+;; object created here. with this method, you are using set twice, and also
+;; introducing a new object along with it. So now, if you have code in other
+;; places which takes a reference to the old ship, then when you replace the
+;; ship object, their references do not refer to the new ship.
+(defun ship-do-damage (ship damage)
+  "returns a new ship with damage subtracted from its health"
+  (let ((new-ship (copy-ship ship))
+        (health (ship-health ship)))
+    (setf (ship-health new-ship)
+          (max 0 (- health damage)))
+
+    new-ship))
+
+(defun ship-attack (ship &rest other-ships)
+  "equally divides the ships power and applies it to each ship supplied.
+
+This function will only attack other ships that are at the same planet as ship
+
+returns a list of new ships with less health. parameters are not modified."
+
+  ;; filter out ships which are:
+  ;;   1. not in the same orbit
+  ;;   2. owned by the same player
+  ;;   3. TODO in an alliance
+  (let ((targets (remove (ship-owner ship)
+                         (ships-at-planet (ship-location ship) other-ships)
+                         :key #'ship-owner
+                         :test #'equalp)))
+    (mapcar (lambda (s) ))))
+
+;;; XXX this function is not the desired approach to this problem.
+(defun ship-attack (ship &optional (ship-list *ships*) &key beam-width)
+  "if ship is in orbit, it will attack ships who are also in orbit with it.
+
+if beam width is a number greater than 1 then the ship will divide its power
+equally among that many other ships "
+  ;; only attack when the ship is at a planet
+  (let ((other-ships (ships-at-planet
+                      (cond ((>= 1.0 (ship-progress))
+                             (orders-report-planet (ship-active-orders ship)))
+                            ((= 0.0 (ship-progress ship))
+                             (orders-leave-planet (ship-active-orders ship)))
+                            (t
+                             nil)))))
+    ))
+
 (defun ship-update (ship)
   "returns an updated copy of ship. the ship paremeter is not modified."
   (let* ((new-ship (copy-ship ship))
